@@ -6,8 +6,8 @@ mod levels;
 fn window_conf() -> Conf {
     Conf {
         window_title: "Cosmic Climber - Rust".to_owned(),
-        window_width: 1920,
-        window_height: 1080,
+        window_width: 1280,
+        window_height: 720,
         ..Default::default()
     }
 }
