@@ -375,8 +375,6 @@
     <script>
       load("cosmic-climber-rs.wasm");
 
-      // Null out mouse handlers after miniquad sets them up
-      // (prevents the RefCell double-borrow panic on mouse_move/focus)
       setTimeout(function () {
         var canvas = document.getElementById("glcanvas");
         if (canvas) {
@@ -390,8 +388,7 @@
             e.preventDefault();
           };
         }
-        onWasmReady();
-      }, 300);
+      }, 800);
     </script>
   </body>
 </html>
