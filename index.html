@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=1280" />
+    <title>Cosmic Climber - Rust Edition</title>
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&display=swap");
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        background: #000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        font-family: "Orbitron", monospace;
+        overflow: hidden;
+      }
+
+      #game-wrapper {
+        position: relative;
+        width: 1920px;
+        height: 1080px;
+      }
+      canvas#glcanvas {
+        display: block;
+        width: 1920px;
+        height: 1080px;
+        image-rendering: pixelated;
+        image-rendering: crisp-edges;
+      }
+
+      /* ── HUD ── */
+      #hud {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        z-index: 10;
+        display: none;
+      }
+      #hud-score {
+        position: absolute;
+        top: 14px;
+        left: 20px;
+        font-size: 22px;
+        color: #fff;
+        text-shadow:
+          0 0 10px #0cf,
+          0 0 20px #0cf;
+        letter-spacing: 2px;
+      }
+      #hud-hi {
+        position: absolute;
+        top: 14px;
+        left: 50%;
+        transform: translateX(-50%);
+        font-size: 16px;
+        color: #ffcc44;
+        text-shadow: 0 0 8px #ffa;
+        letter-spacing: 1px;
+      }
+      #hud-level {
+        position: absolute;
+        top: 14px;
+        right: 20px;
+        font-size: 20px;
+        color: #aef;
+        text-shadow: 0 0 10px #8af;
+        letter-spacing: 2px;
+      }
+      #hud-lives {
+        position: absolute;
+        bottom: 18px;
+        left: 20px;
+        font-size: 28px;
+        color: #f44;
+        text-shadow: 0 0 12px #f22;
+        letter-spacing: 4px;
+      }
+
+      /* ── Full Screen UIs ── */
+      .screen {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        z-index: 30;
+        background: rgba(10, 0, 15, 0.9);
+        pointer-events: none;
+      }
+      .title {
+        font-size: 80px;
+        color: #a4f;
+        text-shadow: 0 0 20px #82f;
+        margin-bottom: 10px;
+      }
+      .subtitle {
+        font-size: 40px;
+        color: #ffcc44;
+        margin-bottom: 30px;
+      }
+      .blink {
+        font-size: 35px;
+        color: #fff;
+        animation: blinker 1.2s linear infinite;
+        margin-top: 40px;
+      }
+
+      @keyframes blinker {
+        50% {
+          opacity: 0;
+        }
+      }
+
+      #scanlines {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: repeating-linear-gradient(
+          0deg,
+          transparent,
+          transparent 2px,
+          rgba(0, 0, 0, 0.04) 2px,
+          rgba(0, 0, 0, 0.04) 4px
+        );
+        pointer-events: none;
+        z-index: 20;
+      }
+      #vignette {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: radial-gradient(
+          ellipse at center,
+          transparent 55%,
+          rgba(0, 0, 0, 0.55) 100%
+        );
+        pointer-events: none;
+        z-index: 21;
+      }
+      #jet-wrap {
+        position: absolute;
+        bottom: 18px;
+        right: 20px;
+        width: 180px;
+      }
+      #jet-label {
+        font-size: 11px;
+        color: #fa8;
+        letter-spacing: 2px;
+        margin-bottom: 3px;
+      }
+      #jet-track {
+        width: 100%;
+        height: 8px;
+        background: rgba(255, 255, 255, 0.15);
+        border-radius: 4px;
+        border: 1px solid rgba(255, 160, 60, 0.5);
+        overflow: hidden;
+      }
+      #jet-bar {
+        height: 100%;
+        background: linear-gradient(90deg, #ff8c00, #ffcc00);
+        border-radius: 3px;
+        transition: width 0.1s;
+        display: none;
+      }
+      /* Wind Arrow Animation */
+      #wind-container {
+        margin-top: 20px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+      #wind-arrow {
+        font-size: 50px;
+        color: #0cf;
+        text-shadow: 0 0 15px #0cf;
+        transition: transform 0.5s ease-out;
+      }
+      #wind-text {
+        font-size: 14px;
+        color: #aef;
+        margin-top: 5px;
+      }
+
+      /* Transition Overlay */
+      #ui-trans {
+        background: rgba(0, 10, 30, 0.85);
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="game-wrapper">
+      <canvas id="glcanvas" tabindex="1" width="1920" height="1080"></canvas>
+
+      <div id="hud">
+        <div id="hud-score">SCORE 0</div>
+        <div id="hud-hi">BEST 0</div>
+        <div id="hud-level">MEADOW</div>
+        <div id="hud-lives">♥♥♥</div>
+        <div id="jet-wrap">
+          <div id="jet-label">JETPACK</div>
+          <div id="jet-track"><div id="jet-bar"></div></div>
+        </div>
+      </div>
+
+      <div id="ui-menu" class="screen">
+        <div class="title">COSMIC CLIMBER</div>
+        <div class="subtitle" style="font-size: 20px">
+          10 LEVELS OF COSMIC MADNESS
+        </div>
+        <div class="blink">&gt; PRESS ENTER TO PLAY &lt;</div>
+      </div>
+
+      <div
+        id="ui-pause"
+        class="screen"
+        style="display: none; background: rgba(0, 0, 0, 0.6)"
+      >
+        <div class="title" style="color: #ffcc44; text-shadow: 0 0 20px #f90">
+          PAUSED
+        </div>
+        <div class="blink">PRESS ENTER TO RESUME</div>
+      </div>
+
+      <div
+        id="ui-gameover"
+        class="screen"
+        style="display: none; background: rgba(30, 0, 0, 0.9)"
+      >
+        <div class="title" style="color: #f44; text-shadow: 0 0 20px #f22">
+          GAME OVER
+        </div>
+        <div id="go-score" class="subtitle">SCORE 0</div>
+        <div class="blink">PRESS ENTER TO RETRY</div>
+      </div>
+
+      <div id="ui-trans" class="screen">
+        <div id="trans-title" class="title">MOUNTAIN</div>
+        <div id="trans-desc" class="subtitle" style="font-size: 18px">
+          The wind is pushing you away...
+        </div>
+        <div id="wind-container">
+          <div id="wind-arrow">➜</div>
+          <div id="wind-text">WIND SPEED: 0.4</div>
+        </div>
+      </div>
+
+      <div id="scanlines"></div>
+      <div id="vignette"></div>
+    </div>
+
+    <script src="https://not-fl3.github.io/miniquad-samples/mq_js_bundle.js"></script>
+    <script>
+      var level_names = [
+        "MEADOW",
+        "FOREST",
+        "MOUNTAIN",
+        "OCEAN",
+        "ARCTIC",
+        "VOLCANO",
+        "SKY CITY",
+        "SPACE STATION",
+        "DEEP SPACE",
+        "COSMIC CORE",
+      ];
+
+      var level_descs = [
+        "A calm start...",
+        "Watch for moving branches.",
+        "The wind is pushing you away...",
+        "Strong sea breezes ahead.",
+        "Freezing gusts will slow you down.",
+        "Heat waves and updrafts.",
+        "City winds are unpredictable.",
+        "Low gravity, artificial wind.",
+        "Solar winds are intense.",
+        "The Core is unstable.",
+      ];
+
+      var level_winds = [0, 0, -0.3, 0.4, -0.5, 0.6, -0.7, 0, -0.7, 0.9];
+
+      miniquad_add_plugin({
+        register_plugin: function (importObject) {
+          importObject.env.js_load_hi = function () {
+            return parseInt(localStorage.getItem("cc_hi") || "0");
+          };
+          importObject.env.js_save_hi = function (s) {
+            localStorage.setItem("cc_hi", s.toString());
+          };
+
+          importObject.env.js_set_hud = function (sc, lv, lives, hi, fuel) {
+            var e = function (id) {
+              return document.getElementById(id);
+            };
+            if (e("hud-score")) e("hud-score").textContent = "SCORE " + sc;
+            if (e("hud-level"))
+              e("hud-level").textContent = level_names[lv] || "LV " + (lv + 1);
+            if (e("hud-lives"))
+              e("hud-lives").textContent = "♥".repeat(Math.max(0, lives));
+            if (e("hud-hi")) e("hud-hi").textContent = "BEST " + hi;
+
+            // Update the fuel bar
+            var jbar = e("jet-bar");
+            if (jbar) {
+              jbar.style.width = (fuel / 180) * 100 + "%"; // 180 is JETPACK_FUEL
+              jbar.style.display = fuel > 0 ? "block" : "none";
+            }
+          };
+
+          importObject.env.js_set_state = function (
+            state_enum,
+            score,
+            level,
+            trans_timer,
+          ) {
+            document.getElementById("ui-menu").style.display =
+              state_enum === 0 ? "flex" : "none";
+            document.getElementById("hud").style.display =
+              state_enum === 1 ? "block" : "none";
+            document.getElementById("ui-pause").style.display =
+              state_enum === 2 ? "flex" : "none";
+            document.getElementById("ui-gameover").style.display =
+              state_enum === 3 ? "flex" : "none";
+
+            // Show Transition UI if timer is active
+            var transUI = document.getElementById("ui-trans");
+            if (trans_timer > 0 && state_enum === 1) {
+              transUI.style.display = "flex";
+              document.getElementById("trans-title").textContent =
+                level_names[level];
+              document.getElementById("trans-desc").textContent =
+                level_descs[level];
+
+              var windVal = level_winds[level];
+              var arrow = document.getElementById("wind-arrow");
+              document.getElementById("wind-text").textContent =
+                "WIND STRENGTH: " + Math.abs(windVal).toFixed(1);
+
+              // Rotate arrow: 0 is right, 180 is left
+              arrow.style.transform =
+                windVal < 0 ? "rotate(180deg)" : "rotate(0deg)";
+              arrow.style.opacity = windVal === 0 ? "0" : "1";
+            } else {
+              transUI.style.display = "none";
+            }
+
+            if (state_enum === 3)
+              document.getElementById("go-score").textContent =
+                "SCORE " + score;
+          };
+        },
+      });
+    </script>
+    <script>
+      load("cosmic-climber-rs.wasm");
+    </script>
+  </body>
+</html>
