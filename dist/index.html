@@ -373,7 +373,20 @@
       });
     </script>
     <script>
-      load("cosmic-climber-rs.wasm").then(onWasmReady);
+      load("cosmic-climber-rs.wasm").then(() => {
+        onWasmReady();
+
+        // miniquad 0.4.x has a RefCell double-borrow panic when mouse_move
+        // and focus events fire simultaneously on page load.
+        // This game is keyboard-only so we can safely kill all mouse handlers.
+        const canvas = document.getElementById("glcanvas");
+        canvas.onmousemove = null;
+        canvas.onmousedown = null;
+        canvas.onmouseup = null;
+        canvas.onmouseenter = null;
+        canvas.onmouseleave = null;
+        canvas.oncontextmenu = (e) => e.preventDefault();
+      });
     </script>
   </body>
 </html>
