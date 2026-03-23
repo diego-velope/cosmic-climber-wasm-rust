@@ -1497,7 +1497,7 @@ impl Game {
             );
 
             ui_text(
-                "ESC to resume",
+                "BACK to resume",
                 HALF_W,
                 panel_y + panel_h - 70.0,
                 20.0,
@@ -1613,7 +1613,7 @@ impl Game {
 
         // State machine input handling
         let enter = is_key_pressed(KeyCode::Enter) || is_key_pressed(KeyCode::KpEnter);
-        let back = is_key_pressed(KeyCode::Escape);
+        let back = is_key_pressed(KeyCode::Escape) || is_key_pressed(KeyCode::Backspace);
         let up = is_key_pressed(KeyCode::Up);
         let down = is_key_pressed(KeyCode::Down);
         let left = is_key_pressed(KeyCode::Left);
