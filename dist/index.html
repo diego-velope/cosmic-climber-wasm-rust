@@ -204,7 +204,7 @@
 
       /* Transition Overlay */
       #ui-trans {
-        background: rgba(0, 10, 30, 0.85);
+        background: rgba(0, 10, 30, 0.60);
         display: none;
       }
     </style>
@@ -309,6 +309,19 @@
             localStorage.setItem("cc_hi", s.toString());
           };
 
+          importObject.env.js_get_initial_game_speed = function () {
+            // gameSpeed=1..10 => 10%..100%
+            try {
+              var params = new URLSearchParams(window.location.search);
+              var raw = parseInt(params.get("gameSpeed"), 10);
+              if (!Number.isFinite(raw)) return 10;
+              raw = Math.max(1, Math.min(10, raw));
+              return raw;
+            } catch (e) {
+              return 10;
+            }
+          };
+
           importObject.env.js_set_hud = function (sc, lv, lives, hi, fuel) {
             var e = function (id) {
               return document.getElementById(id);
@@ -339,7 +352,7 @@
             document.getElementById("hud").style.display =
               state_enum === 1 ? "block" : "none";
             document.getElementById("ui-pause").style.display =
-              state_enum === 2 ? "flex" : "none";
+              "none";
             document.getElementById("ui-gameover").style.display =
               state_enum === 3 ? "flex" : "none";
 

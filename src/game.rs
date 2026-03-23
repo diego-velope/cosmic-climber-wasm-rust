@@ -10,6 +10,7 @@ extern "C" {
     pub fn js_set_hud(sc: i32, lv: i32, lives: i32, hi: i32, fuel: i32);
     // Updated to match the new UI logic: state, score, level, timer
     pub fn js_set_state(state: i32, score: i32, level: i32, trans_timer: f32);
+    pub fn js_get_initial_game_speed() -> i32;
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -20,6 +21,10 @@ pub unsafe fn js_load_hi() -> i32 {
 pub unsafe fn js_save_hi(_s: i32) {}
 #[cfg(not(target_arch = "wasm32"))]
 pub unsafe fn js_set_hud(_sc: i32, _lv: i32, _l: i32, _h: i32, _f: i32) {}
+#[cfg(not(target_arch = "wasm32"))]
+pub unsafe fn js_get_initial_game_speed() -> i32 {
+    10
+}
 
 // Update the stub to match 4 arguments!
 #[cfg(not(target_arch = "wasm32"))]
@@ -47,7 +52,7 @@ pub const LIVES_START: i32 = 3;
 pub const NUM_LEVELS: usize = 10;
 
 pub const LEVEL_THRESHOLDS: [f32; NUM_LEVELS] = [
-    0.0, 800.0, 2000.0, 3500.0, 5000.0, 7500.0, 9800.0, 12400.0, 15400.0, 19000.0,
+    0.0, 10000.0, 20000.0, 30000.0, 40000.0, 50000.0, 60000.0, 70000.0, 80000.0, 90000.0,
 ];
 
 // ── Enums ─────────────────────────────────────────────
@@ -226,6 +231,7 @@ pub struct LevelCfg {
 // ── Main Game Struct ──────────────────────────────────
 pub struct Game {
     pub player_tex: Texture2D,
+    pub ui_font: Font,
     pub state: GameState,
     pub level: usize,
     pub score: i32,
@@ -269,6 +275,17 @@ pub struct Game {
 
     pub dt: f32,
     pub time: f32,
+
+    // ── Game Speed (1..=10 UI setting) ───────────────────────────────
+    // 1 = 10% speed, 10 = 100% speed.
+    pub game_speed_idx: i32,
+    pub pending_game_speed_idx: i32,
+    pub sim_accum: f32,
+
+    // ── Pause Submenu State ──────────────────────────────────────────
+    pub pause_sel: i32, // 0: Return to Game, 1: Settings
+    pub settings_sel: i32, // 0: Game Speed, 1: Save
+    pub settings_open: bool,
 }
 
 // ── Rendering Colors ──────────────────────────────────
@@ -288,7 +305,10 @@ pub const PLAT_COLS: [Color; 10] = [
 
 impl Game {
     // ── Equivalent to game_init() ──
-    pub fn new(player_tex: Texture2D) -> Self {
+    pub fn new(player_tex: Texture2D, ui_font: Font) -> Self {
+        let initial_speed = unsafe { js_get_initial_game_speed() };
+        let game_speed_idx = initial_speed.clamp(1, 10);
+
         // Build our starry background
         let mut stars = Vec::with_capacity(180);
         for _ in 0..180 {
@@ -303,6 +323,7 @@ impl Game {
         // Create the base game object
         let mut game = Game {
             player_tex,
+            ui_font,
             state: GameState::Menu,
             level: 0,
             score: 0,
@@ -335,6 +356,14 @@ impl Game {
             trans_a: 0.0,
             dt: 0.0,
             time: 0.0,
+
+            game_speed_idx,
+            pending_game_speed_idx: game_speed_idx,
+            sim_accum: 0.0,
+
+            pause_sel: 0,
+            settings_sel: 0,
+            settings_open: false,
         };
 
         // Initialize the first level
@@ -400,6 +429,13 @@ impl Game {
         self.shake = 0.0;
         self.flash_a = 0.0;
         self.time = 0.0;
+
+        // Reset any pause/settings UI state, but keep the saved game speed.
+        self.sim_accum = 0.0;
+        self.pause_sel = 0;
+        self.settings_sel = 0;
+        self.settings_open = false;
+        self.pending_game_speed_idx = self.game_speed_idx;
     }
 
     // ── Equivalent to spawn_platform() ──
@@ -1249,126 +1285,462 @@ impl Game {
         }
     }
 
-    // ── The Master Game Loop Update ──
-    pub fn update(&mut self) {
-        self.dt = get_frame_time().min(0.05);
-        self.time += self.dt;
+    fn game_speed_mult(&self) -> f32 {
+        // 1..=10 => 0.1..=1.0
+        (self.game_speed_idx as f32) / 10.0
+    }
 
-        // 1. Tell the UI what state we are in immediately!
-        unsafe {
-            js_set_state(
-                self.state as i32,
-                self.score,
-                self.level as i32,
-                self.trans_timer,
+    fn update_pause_menu(
+        &mut self,
+        up: bool,
+        down: bool,
+        left: bool,
+        right: bool,
+        enter: bool,
+        back: bool,
+    ) {
+        // BACK behavior:
+        // - On the main pause menu: resume the game.
+        // - In Settings: discard changes and go back to pause menu.
+        if back {
+            if !self.settings_open {
+                self.state = GameState::Playing;
+                return;
+            }
+
+            self.settings_open = false;
+            self.pending_game_speed_idx = self.game_speed_idx;
+            return;
+        }
+
+        if !self.settings_open {
+            if down {
+                self.pause_sel = (self.pause_sel + 1) % 2;
+            } else if up {
+                self.pause_sel = (self.pause_sel + 1) % 2;
+            }
+
+            // IMPORTANT: Left/Right is disabled on the main pause menu.
+            if enter {
+                match self.pause_sel {
+                    0 => {
+                        self.state = GameState::Playing;
+                    }
+                    1 => {
+                        self.settings_open = true;
+                        self.pending_game_speed_idx = self.game_speed_idx;
+                        self.settings_sel = 0; // Game Speed
+                    }
+                    _ => {}
+                }
+            }
+            return;
+        }
+
+        // Settings submenu
+        if down {
+            self.settings_sel = (self.settings_sel + 1) % 2;
+        } else if up {
+            self.settings_sel = (self.settings_sel + 1) % 2;
+        }
+
+        // Only allow changing speed with Left/Right when focused on the speed option.
+        if self.settings_sel == 0 {
+            if left {
+                self.pending_game_speed_idx = (self.pending_game_speed_idx - 1).max(1);
+            }
+            if right {
+                self.pending_game_speed_idx = (self.pending_game_speed_idx + 1).min(10);
+            }
+        }
+
+        if enter && self.settings_sel == 1 {
+            // Save -> apply pending speed and return to main pause menu.
+            self.game_speed_idx = self.pending_game_speed_idx;
+            self.settings_open = false;
+            self.pause_sel = 1; // highlight "Settings"
+        }
+    }
+
+    fn draw_pause_overlay(&self) {
+        // Dim background so the menu is readable (but still shows gameplay).
+        draw_rectangle(
+            0.0,
+            0.0,
+            SCREEN_W,
+            SCREEN_H,
+            Color::new(0.0, 0.0, 0.0, 0.68),
+        );
+
+        // Centered panel.
+        let panel_w = 720.0;
+        let panel_h = 460.0;
+        let panel_x = HALF_W - panel_w / 2.0;
+        let panel_y = HALF_H - panel_h / 2.0;
+
+        draw_rectangle(
+            panel_x,
+            panel_y,
+            panel_w,
+            panel_h,
+            Color::new(0.02, 0.02, 0.05, 0.82),
+        );
+        draw_rectangle_lines(
+            panel_x,
+            panel_y,
+            panel_w,
+            panel_h,
+            2.0,
+            Color::new(0.2, 0.8, 1.0, 0.25),
+        );
+
+        // Helper for UI text rendered with Orbitron and manually centered.
+        // Macroquad's `TextParams` in v0.4 doesn't have an anchor field, so
+        // we compute the text dimensions and offset accordingly.
+        let ui_text = |text: &str, cx: f32, cy: f32, size: f32, color: Color| {
+            let dims = measure_text(text, Some(&self.ui_font), size as u16, 1.0);
+
+            // `draw_text_ex` uses (x,y) as the baseline position for the text,
+            // while `measure_text` returns a bounding box relative to that baseline.
+            // We convert the desired center into (x,y) for rendering.
+            let x = cx - dims.width / 2.0;
+            let y = cy + dims.offset_y - dims.height / 2.0;
+
+            draw_text_ex(
+                text,
+                x,
+                y,
+                TextParams {
+                    font: Some(&self.ui_font),
+                    font_size: size as u16,
+                    color,
+                    ..Default::default()
+                },
+            );
+        };
+
+        if !self.settings_open {
+            ui_text(
+                "PAUSED",
+                HALF_W,
+                panel_y + 90.0,
+                64.0,
+                Color::new(0.95, 0.85, 0.25, 1.0),
+            );
+
+            // Two centered "buttons"
+            let row1_y = panel_y + 185.0;
+            let row2_y = row1_y + 86.0;
+            let row_h = 72.0;
+
+            let (row1_sel, row2_sel) = (self.pause_sel == 0, self.pause_sel == 1);
+
+            let bg_sel = Color::new(0.15, 0.65, 1.0, 0.20);
+            let bg_unsel = Color::new(1.0, 1.0, 1.0, 0.06);
+            let border_sel = Color::new(0.15, 0.85, 1.0, 0.55);
+            let border_unsel = Color::new(1.0, 1.0, 1.0, 0.12);
+
+            // Row 1
+            draw_rectangle(
+                panel_x + 20.0,
+                row1_y,
+                panel_w - 40.0,
+                row_h,
+                if row1_sel { bg_sel } else { bg_unsel },
+            );
+            draw_rectangle_lines(
+                panel_x + 20.0,
+                row1_y,
+                panel_w - 40.0,
+                row_h,
+                2.0,
+                if row1_sel { border_sel } else { border_unsel },
+            );
+            ui_text(
+                "RETURN TO GAME",
+                HALF_W,
+                row1_y + row_h / 2.0 + 2.0,
+                28.0,
+                if row1_sel {
+                    WHITE
+                } else {
+                    Color::new(0.85, 0.85, 0.90, 1.0)
+                },
+            );
+
+            // Row 2
+            draw_rectangle(
+                panel_x + 20.0,
+                row2_y,
+                panel_w - 40.0,
+                row_h,
+                if row2_sel { bg_sel } else { bg_unsel },
+            );
+            draw_rectangle_lines(
+                panel_x + 20.0,
+                row2_y,
+                panel_w - 40.0,
+                row_h,
+                2.0,
+                if row2_sel { border_sel } else { border_unsel },
+            );
+            ui_text(
+                "SETTINGS",
+                HALF_W,
+                row2_y + row_h / 2.0 + 2.0,
+                34.0,
+                if row2_sel {
+                    WHITE
+                } else {
+                    Color::new(0.85, 0.85, 0.90, 1.0)
+                },
+            );
+
+            ui_text(
+                "ESC to resume",
+                HALF_W,
+                panel_y + panel_h - 70.0,
+                20.0,
+                Color::new(0.85, 0.95, 1.0, 0.95),
+            );
+        } else {
+            ui_text(
+                "SETTINGS",
+                HALF_W,
+                panel_y + 90.0,
+                58.0,
+                Color::new(0.35, 0.95, 1.0, 1.0),
+            );
+
+            let row1_y = panel_y + 190.0;
+            let row2_y = row1_y + 86.0;
+            let row_h = 72.0;
+
+            let row1_sel = self.settings_sel == 0;
+            let row2_sel = self.settings_sel == 1;
+
+            let bg_sel = Color::new(0.30, 0.9, 1.0, 0.16);
+            let bg_unsel = Color::new(1.0, 1.0, 1.0, 0.06);
+            let border_sel = Color::new(0.25, 1.0, 1.0, 0.55);
+            let border_unsel = Color::new(1.0, 1.0, 1.0, 0.12);
+
+            draw_rectangle(
+                panel_x + 20.0,
+                row1_y,
+                panel_w - 40.0,
+                row_h,
+                if row1_sel { bg_sel } else { bg_unsel },
+            );
+            draw_rectangle_lines(
+                panel_x + 20.0,
+                row1_y,
+                panel_w - 40.0,
+                row_h,
+                2.0,
+                if row1_sel { border_sel } else { border_unsel },
+            );
+
+            let percent = self.pending_game_speed_idx * 10;
+            let speed_label = format!(
+                "GAME SPEED: {} ({}%)",
+                self.pending_game_speed_idx, percent
+            );
+            ui_text(
+                &speed_label,
+                HALF_W,
+                row1_y + row_h * 0.36,
+                26.0,
+                if row1_sel {
+                    WHITE
+                } else {
+                    Color::new(0.85, 0.85, 0.90, 1.0)
+                },
+            );
+
+            ui_text(
+                "LEFT / RIGHT",
+                HALF_W,
+                row1_y + row_h * 0.66,
+                18.0,
+                if row1_sel {
+                    Color::new(0.75, 1.0, 1.0, 0.95)
+                } else {
+                    Color::new(0.6, 0.6, 0.7, 0.9)
+                },
+            );
+
+            // Row 2: Save
+            draw_rectangle(
+                panel_x + 20.0,
+                row2_y,
+                panel_w - 40.0,
+                row_h,
+                if row2_sel { bg_sel } else { bg_unsel },
+            );
+            draw_rectangle_lines(
+                panel_x + 20.0,
+                row2_y,
+                panel_w - 40.0,
+                row_h,
+                2.0,
+                if row2_sel { border_sel } else { border_unsel },
+            );
+            ui_text(
+                "SAVE",
+                HALF_W,
+                row2_y + row_h / 2.0 + 3.0,
+                40.0,
+                if row2_sel {
+                    WHITE
+                } else {
+                    Color::new(0.85, 0.85, 0.90, 1.0)
+                },
+            );
+
+            ui_text(
+                "ESC discards changes",
+                HALF_W,
+                panel_y + panel_h - 70.0,
+                20.0,
+                Color::new(0.85, 0.95, 1.0, 0.95),
             );
         }
+    }
+
+    // ── The Master Game Loop Update ──
+    pub fn update(&mut self) {
+        const FIXED_DT: f32 = 1.0 / 60.0;
 
         // State machine input handling
         let enter = is_key_pressed(KeyCode::Enter) || is_key_pressed(KeyCode::KpEnter);
-        let escape = is_key_pressed(KeyCode::Escape);
+        let back = is_key_pressed(KeyCode::Escape);
+        let up = is_key_pressed(KeyCode::Up);
+        let down = is_key_pressed(KeyCode::Down);
+        let left = is_key_pressed(KeyCode::Left);
+        let right = is_key_pressed(KeyCode::Right);
+        let high_before = self.high_score;
 
         match self.state {
             GameState::Menu => {
                 if enter {
                     self.reset(0);
                 }
-                return;
             }
             GameState::GameOver => {
                 if enter {
                     self.reset(0);
                 }
-                return;
             }
             GameState::Paused => {
-                // Resume if Enter or Escape is pressed
-                if enter || escape {
-                    self.state = GameState::Playing;
-                }
-                return;
+                self.update_pause_menu(up, down, left, right, enter, back);
             }
             GameState::Playing => {
-                if escape {
+                if back {
                     self.state = GameState::Paused;
+                    self.pause_sel = 0;
+                    self.settings_open = false;
+                    self.pending_game_speed_idx = self.game_speed_idx;
+                } else {
+                    // Fixed-step simulation with speed scaling.
+                    let real_dt = get_frame_time().min(0.05);
+                    self.sim_accum += real_dt * self.game_speed_mult();
+
+                    while self.sim_accum >= FIXED_DT {
+                        self.dt = FIXED_DT;
+                        self.time += self.dt;
+
+                        // While the "new level" banner is visible (trans_timer > 0),
+                        // pause gameplay simulation so the player can't fall/die
+                        // during the warning.
+                        if self.trans_timer > 0.0 {
+                            self.trans_timer -= self.dt;
+
+                            // ── FX Decay ──
+                            self.shake = (self.shake - 0.5).max(0.0);
+                            self.flash_a = (self.flash_a - 0.03).max(0.0);
+
+                            self.sim_accum -= FIXED_DT;
+                            continue;
+                        }
+
+                        self.update_player();
+                        self.update_platforms();
+                        self.update_particles();
+                        self.update_bullets();
+                        self.update_enemies();
+                        self.update_camera();
+                        self.generate();
+                        self.check_death();
+
+                        // ── FX Decay ──
+                        self.shake = (self.shake - 0.5).max(0.0);
+                        self.flash_a = (self.flash_a - 0.03).max(0.0);
+
+                        // ── Score Calculation ──
+                        let sc = (self.max_height / 10.0) as i32;
+                        if sc > self.score {
+                            self.score = sc;
+                        }
+                        if self.score > self.high_score {
+                            self.high_score = self.score;
+                        }
+
+                        // ── Level Transition Check ──
+                        let mut new_lv = 0;
+                        for i in (0..crate::game::NUM_LEVELS).rev() {
+                            if self.max_height >= crate::game::LEVEL_THRESHOLDS[i] {
+                                new_lv = i;
+                                break;
+                            }
+                        }
+
+                        if new_lv != self.level {
+                            self.level = new_lv;
+                            self.trans_timer = 3.0;
+
+                            self.flash_col = Color::new(1.0, 1.0, 0.8, 1.0);
+                            self.flash_a = 0.6;
+                            self.shake = self.shake.max(4.0);
+                            self.cp_valid = false;
+                            self.cp_level = new_lv;
+                        }
+
+                        self.sim_accum -= FIXED_DT;
+
+                        if self.state != GameState::Playing {
+                            break;
+                        }
+                    }
                 }
             }
             _ => {}
         }
 
-        self.update_player();
-        self.update_platforms();
-        self.update_particles();
-        self.update_bullets();
-        self.update_enemies();
-        self.update_camera();
-        self.generate();
-        self.check_death();
-
-        // ── Transition Timer Countdown ──
-        if self.trans_timer > 0.0 {
-            self.trans_timer -= self.dt;
-        }
-
-        // ── FX Decay ──
-        self.shake = (self.shake - 0.5).max(0.0);
-        self.flash_a = (self.flash_a - 0.03).max(0.0);
-
-        // ── Score Calculation ──
-        let sc = (self.max_height / 10.0) as i32;
-        if sc > self.score {
-            self.score = sc;
-        }
-        if self.score > self.high_score {
-            self.high_score = self.score;
-            // (We will hook up the JS localStorage save here later!)
-        }
-
-        // ── Level Transition Check ──
-        let mut new_lv = 0;
-        for i in (0..crate::game::NUM_LEVELS).rev() {
-            if self.max_height >= crate::game::LEVEL_THRESHOLDS[i] {
-                new_lv = i;
-                break;
-            }
-        }
-
-        if new_lv != self.level {
-            self.level = new_lv;
-            self.trans_timer = 3.0; // Start the 3-second "Warning" state
-
-            self.flash_col = Color::new(1.0, 1.0, 0.8, 1.0);
-            self.flash_a = 0.6;
-            self.shake = self.shake.max(4.0);
-            self.cp_valid = false;
-            self.cp_level = new_lv;
-        }
-
         // ── JS Interop: Save & Update HUD ──
-        if self.score > self.high_score {
-            self.high_score = self.score;
+        if self.state == GameState::Playing && self.high_score > high_before {
             unsafe {
                 js_save_hi(self.high_score);
             }
         }
 
         unsafe {
-            let fuel = if self.player.has_jetpack {
-                self.player.jet_fuel
-            } else {
-                0
-            };
+            // Update HUD only while playing.
+            if self.state == GameState::Playing {
+                let fuel = if self.player.has_jetpack {
+                    self.player.jet_fuel
+                } else {
+                    0
+                };
 
-            // Update the HUD values
-            js_set_hud(
-                self.score,
-                self.level as i32,
-                self.player.lives,
-                self.high_score,
-                fuel,
-            );
+                js_set_hud(
+                    self.score,
+                    self.level as i32,
+                    self.player.lives,
+                    self.high_score,
+                    fuel,
+                );
+            }
 
-            // FIX: Pass the level and the trans_timer as the 3rd and 4th arguments
             js_set_state(
                 self.state as i32,
                 self.score,
@@ -1794,6 +2166,11 @@ impl Game {
                     self.flash_a,
                 ),
             );
+        }
+
+        // Pause submenu drawn on top of the gameplay.
+        if self.state == GameState::Paused {
+            self.draw_pause_overlay();
         }
     }
 }

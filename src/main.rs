@@ -20,8 +20,11 @@ async fn main() {
     let player_texture: Texture2D = load_texture("assets/astronaut.png").await.unwrap();
     player_texture.set_filter(FilterMode::Nearest);
 
-    // 2. Pass it into the game constructor
-    let mut game_state = game::Game::new(player_texture);
+    // 2. Load Orbitron font for canvas UI text
+    let ui_font = load_ttf_font("assets/Orbitron-Bold.ttf").await.unwrap();
+
+    // 3. Pass it into the game constructor
+    let mut game_state = game::Game::new(player_texture, ui_font);
 
     loop {
         game_state.update();
