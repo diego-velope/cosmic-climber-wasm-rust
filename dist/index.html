@@ -232,16 +232,8 @@
         <div class="blink">&gt; PRESS ENTER TO PLAY &lt;</div>
       </div>
 
-      <div
-        id="ui-pause"
-        class="screen"
-        style="display: none; background: rgba(0, 0, 0, 0.6)"
-      >
-        <div class="title" style="color: #ffcc44; text-shadow: 0 0 20px #f90">
-          PAUSED
-        </div>
-        <div class="blink">PRESS ENTER TO RESUME</div>
-      </div>
+      <!-- ui-pause: JS forces display:none; canvas renders all pause UI -->
+      <div id="ui-pause" class="screen" style="display: none; background: none; pointer-events: none;"></div>
 
       <div
         id="ui-gameover"

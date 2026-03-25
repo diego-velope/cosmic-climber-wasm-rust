@@ -1363,247 +1363,130 @@ impl Game {
     }
 
     fn draw_pause_overlay(&self) {
-        // Dim background so the menu is readable (but still shows gameplay).
-        draw_rectangle(
-            0.0,
-            0.0,
-            SCREEN_W,
-            SCREEN_H,
-            Color::new(0.0, 0.0, 0.0, 0.68),
-        );
+        // ── Full-screen dim ─────────────────────────────────────────────────
+        draw_rectangle(0.0, 0.0, SCREEN_W, SCREEN_H, Color::new(0.0, 0.0, 0.0, 0.60));
 
-        // Centered panel.
-        let panel_w = 720.0;
-        let panel_h = 460.0;
-        let panel_x = HALF_W - panel_w / 2.0;
-        let panel_y = HALF_H - panel_h / 2.0;
+        // ── Panel ───────────────────────────────────────────────────────────
+        let panel_w = 520.0_f32;
+        let panel_h = 340.0_f32;
+        let panel_x = HALF_W - panel_w * 0.5;
+        let panel_y = HALF_H - panel_h * 0.5;
 
-        draw_rectangle(
-            panel_x,
-            panel_y,
-            panel_w,
-            panel_h,
-            Color::new(0.02, 0.02, 0.05, 0.82),
-        );
-        draw_rectangle_lines(
-            panel_x,
-            panel_y,
-            panel_w,
-            panel_h,
-            2.0,
-            Color::new(0.2, 0.8, 1.0, 0.25),
-        );
+        // Dark panel body
+        draw_rectangle(panel_x, panel_y, panel_w, panel_h,
+            Color::new(0.03, 0.03, 0.06, 0.95));
 
-        // Helper for UI text rendered with Orbitron and manually centered.
-        // Macroquad's `TextParams` in v0.4 doesn't have an anchor field, so
-        // we compute the text dimensions and offset accordingly.
+        // Thin outer border (matches the screenshot's subtle cyan/white rim)
+        draw_rectangle_lines(panel_x, panel_y, panel_w, panel_h,
+            2.0, Color::new(1.0, 1.0, 1.0, 0.18));
+
+        // ── Centered text helper (Orbitron via ui_font) ─────────────────────
         let ui_text = |text: &str, cx: f32, cy: f32, size: f32, color: Color| {
             let dims = measure_text(text, Some(&self.ui_font), size as u16, 1.0);
-
-            // `draw_text_ex` uses (x,y) as the baseline position for the text,
-            // while `measure_text` returns a bounding box relative to that baseline.
-            // We convert the desired center into (x,y) for rendering.
-            let x = cx - dims.width / 2.0;
-            let y = cy + dims.offset_y - dims.height / 2.0;
-
-            draw_text_ex(
-                text,
-                x,
-                y,
-                TextParams {
-                    font: Some(&self.ui_font),
-                    font_size: size as u16,
-                    color,
-                    ..Default::default()
-                },
-            );
+            let x = cx - dims.width * 0.5;
+            let y = cy + dims.offset_y - dims.height * 0.5;
+            draw_text_ex(text, x, y, TextParams {
+                font: Some(&self.ui_font),
+                font_size: size as u16,
+                color,
+                ..Default::default()
+            });
         };
 
         if !self.settings_open {
-            ui_text(
-                "PAUSED",
-                HALF_W,
-                panel_y + 90.0,
-                64.0,
-                Color::new(0.95, 0.85, 0.25, 1.0),
-            );
+            // ── Title ────────────────────────────────────────────────────────
+            ui_text("PAUSED", HALF_W, panel_y + 76.0, 62.0,
+                Color::new(1.00, 0.87, 0.22, 1.0));
 
-            // Two centered "buttons"
-            let row1_y = panel_y + 185.0;
-            let row2_y = row1_y + 86.0;
-            let row_h = 72.0;
+            // ── Button rows ──────────────────────────────────────────────────
+            let btn_x  = panel_x + 20.0;
+            let btn_w  = panel_w - 40.0;
+            let btn_h  = 60.0_f32;
+            let row1_y = panel_y + 136.0;
+            let row2_y = row1_y + btn_h + 16.0;
 
-            let (row1_sel, row2_sel) = (self.pause_sel == 0, self.pause_sel == 1);
+            let row1_sel = self.pause_sel == 0;
+            let row2_sel = self.pause_sel == 1;
 
-            let bg_sel = Color::new(0.15, 0.65, 1.0, 0.20);
-            let bg_unsel = Color::new(1.0, 1.0, 1.0, 0.06);
-            let border_sel = Color::new(0.15, 0.85, 1.0, 0.55);
-            let border_unsel = Color::new(1.0, 1.0, 1.0, 0.12);
+            let bg_sel       = Color::new(0.10, 0.35, 0.65, 0.55);
+            let bg_unsel     = Color::new(0.08, 0.08, 0.12, 0.90);
+            let border_sel   = Color::new(0.20, 0.75, 1.00, 0.70);
+            let border_unsel = Color::new(1.0,  1.0,  1.0,  0.12);
+            let text_sel     = WHITE;
+            let text_unsel   = Color::new(0.80, 0.80, 0.85, 1.0);
 
-            // Row 1
-            draw_rectangle(
-                panel_x + 20.0,
-                row1_y,
-                panel_w - 40.0,
-                row_h,
-                if row1_sel { bg_sel } else { bg_unsel },
-            );
-            draw_rectangle_lines(
-                panel_x + 20.0,
-                row1_y,
-                panel_w - 40.0,
-                row_h,
-                2.0,
-                if row1_sel { border_sel } else { border_unsel },
-            );
-            ui_text(
-                "RETURN TO GAME",
-                HALF_W,
-                row1_y + row_h / 2.0 + 2.0,
-                28.0,
-                if row1_sel {
-                    WHITE
-                } else {
-                    Color::new(0.85, 0.85, 0.90, 1.0)
-                },
-            );
+            // Row 1 — RETURN TO GAME
+            draw_rectangle(btn_x, row1_y, btn_w, btn_h,
+                if row1_sel { bg_sel } else { bg_unsel });
+            draw_rectangle_lines(btn_x, row1_y, btn_w, btn_h, 2.0,
+                if row1_sel { border_sel } else { border_unsel });
+            ui_text("RETURN TO GAME", HALF_W, row1_y + btn_h * 0.5, 24.0,
+                if row1_sel { text_sel } else { text_unsel });
 
-            // Row 2
-            draw_rectangle(
-                panel_x + 20.0,
-                row2_y,
-                panel_w - 40.0,
-                row_h,
-                if row2_sel { bg_sel } else { bg_unsel },
-            );
-            draw_rectangle_lines(
-                panel_x + 20.0,
-                row2_y,
-                panel_w - 40.0,
-                row_h,
-                2.0,
-                if row2_sel { border_sel } else { border_unsel },
-            );
-            ui_text(
-                "SETTINGS",
-                HALF_W,
-                row2_y + row_h / 2.0 + 2.0,
-                34.0,
-                if row2_sel {
-                    WHITE
-                } else {
-                    Color::new(0.85, 0.85, 0.90, 1.0)
-                },
-            );
+            // Row 2 — SETTINGS
+            draw_rectangle(btn_x, row2_y, btn_w, btn_h,
+                if row2_sel { bg_sel } else { bg_unsel });
+            draw_rectangle_lines(btn_x, row2_y, btn_w, btn_h, 2.0,
+                if row2_sel { border_sel } else { border_unsel });
+            ui_text("SETTINGS", HALF_W, row2_y + btn_h * 0.5, 30.0,
+                if row2_sel { text_sel } else { text_unsel });
 
-            ui_text(
-                "BACK to resume",
-                HALF_W,
-                panel_y + panel_h - 70.0,
-                20.0,
-                Color::new(0.85, 0.95, 1.0, 0.95),
-            );
+            // ── Footer ───────────────────────────────────────────────────────
+            ui_text("BACK to resume", HALF_W, panel_y + panel_h - 30.0, 18.0,
+                Color::new(0.75, 0.88, 1.0, 0.80));
+
         } else {
-            ui_text(
-                "SETTINGS",
-                HALF_W,
-                panel_y + 90.0,
-                58.0,
-                Color::new(0.35, 0.95, 1.0, 1.0),
-            );
+            // ── SETTINGS ─────────────────────────────────────────────────────
+            ui_text("SETTINGS", HALF_W, panel_y + 76.0, 56.0,
+                Color::new(0.30, 0.95, 1.0, 1.0));
 
-            let row1_y = panel_y + 190.0;
-            let row2_y = row1_y + 86.0;
-            let row_h = 72.0;
+            let btn_x  = panel_x + 20.0;
+            let btn_w  = panel_w - 40.0;
+            let btn_h  = 64.0_f32;
+            let row1_y = panel_y + 130.0;
+            let row2_y = row1_y + btn_h + 16.0;
 
             let row1_sel = self.settings_sel == 0;
             let row2_sel = self.settings_sel == 1;
 
-            let bg_sel = Color::new(0.30, 0.9, 1.0, 0.16);
-            let bg_unsel = Color::new(1.0, 1.0, 1.0, 0.06);
-            let border_sel = Color::new(0.25, 1.0, 1.0, 0.55);
-            let border_unsel = Color::new(1.0, 1.0, 1.0, 0.12);
+            let bg_sel       = Color::new(0.10, 0.35, 0.65, 0.55);
+            let bg_unsel     = Color::new(0.08, 0.08, 0.12, 0.90);
+            let border_sel   = Color::new(0.20, 0.85, 1.00, 0.70);
+            let border_unsel = Color::new(1.0,  1.0,  1.0,  0.12);
+            let text_sel     = WHITE;
+            let text_unsel   = Color::new(0.80, 0.80, 0.85, 1.0);
 
-            draw_rectangle(
-                panel_x + 20.0,
-                row1_y,
-                panel_w - 40.0,
-                row_h,
-                if row1_sel { bg_sel } else { bg_unsel },
-            );
-            draw_rectangle_lines(
-                panel_x + 20.0,
-                row1_y,
-                panel_w - 40.0,
-                row_h,
-                2.0,
-                if row1_sel { border_sel } else { border_unsel },
-            );
+            // Row 1 — Game Speed
+            draw_rectangle(btn_x, row1_y, btn_w, btn_h,
+                if row1_sel { bg_sel } else { bg_unsel });
+            draw_rectangle_lines(btn_x, row1_y, btn_w, btn_h, 2.0,
+                if row1_sel { border_sel } else { border_unsel });
 
             let percent = self.pending_game_speed_idx * 10;
             let speed_label = format!(
                 "GAME SPEED: {} ({}%)",
                 self.pending_game_speed_idx, percent
             );
-            ui_text(
-                &speed_label,
-                HALF_W,
-                row1_y + row_h * 0.36,
-                26.0,
+            ui_text(&speed_label, HALF_W, row1_y + btn_h * 0.36, 24.0,
+                if row1_sel { text_sel } else { text_unsel });
+            ui_text("LEFT / RIGHT", HALF_W, row1_y + btn_h * 0.72, 16.0,
                 if row1_sel {
-                    WHITE
+                    Color::new(0.55, 0.90, 1.0, 0.90)
                 } else {
-                    Color::new(0.85, 0.85, 0.90, 1.0)
-                },
-            );
+                    Color::new(0.50, 0.50, 0.60, 0.80)
+                });
 
-            ui_text(
-                "LEFT / RIGHT",
-                HALF_W,
-                row1_y + row_h * 0.66,
-                18.0,
-                if row1_sel {
-                    Color::new(0.75, 1.0, 1.0, 0.95)
-                } else {
-                    Color::new(0.6, 0.6, 0.7, 0.9)
-                },
-            );
+            // Row 2 — Save
+            draw_rectangle(btn_x, row2_y, btn_w, btn_h,
+                if row2_sel { bg_sel } else { bg_unsel });
+            draw_rectangle_lines(btn_x, row2_y, btn_w, btn_h, 2.0,
+                if row2_sel { border_sel } else { border_unsel });
+            ui_text("SAVE", HALF_W, row2_y + btn_h * 0.5, 36.0,
+                if row2_sel { text_sel } else { text_unsel });
 
-            // Row 2: Save
-            draw_rectangle(
-                panel_x + 20.0,
-                row2_y,
-                panel_w - 40.0,
-                row_h,
-                if row2_sel { bg_sel } else { bg_unsel },
-            );
-            draw_rectangle_lines(
-                panel_x + 20.0,
-                row2_y,
-                panel_w - 40.0,
-                row_h,
-                2.0,
-                if row2_sel { border_sel } else { border_unsel },
-            );
-            ui_text(
-                "SAVE",
-                HALF_W,
-                row2_y + row_h / 2.0 + 3.0,
-                40.0,
-                if row2_sel {
-                    WHITE
-                } else {
-                    Color::new(0.85, 0.85, 0.90, 1.0)
-                },
-            );
-
-            ui_text(
-                "ESC discards changes",
-                HALF_W,
-                panel_y + panel_h - 70.0,
-                20.0,
-                Color::new(0.85, 0.95, 1.0, 0.95),
-            );
+            // ── Footer ───────────────────────────────────────────────────────
+            ui_text("ESC discards changes", HALF_W, panel_y + panel_h - 30.0, 18.0,
+                Color::new(0.75, 0.88, 1.0, 0.80));
         }
     }
 
