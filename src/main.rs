@@ -1,7 +1,11 @@
 use macroquad::prelude::*;
 
 mod game;
+mod input;
 mod levels;
+
+#[cfg(target_arch = "wasm32")]
+use input::tv_input_manager::init_tv_input_manager;
 
 fn window_conf() -> Conf {
     Conf {
@@ -14,6 +18,9 @@ fn window_conf() -> Conf {
 
 #[macroquad::main(window_conf)]
 async fn main() {
+    #[cfg(target_arch = "wasm32")]
+    init_tv_input_manager();
+
     rand::srand(macroquad::miniquad::date::now() as u64);
 
     // 1. Load the texture FIRST

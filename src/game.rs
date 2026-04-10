@@ -2,6 +2,10 @@ use macroquad::prelude::*;
 // We'll bring in Macroquad's color type for your flash/sky colors
 use macroquad::prelude::Color;
 
+use crate::input::tv_input_manager::get_tv_input_manager;
+#[cfg(target_arch = "wasm32")]
+use crate::input::tv_input_manager::get_tv_input_manager_mut;
+
 // ── JS Bindings: Updated for 4-argument state transitions ──
 #[cfg(target_arch = "wasm32")]
 extern "C" {
@@ -286,6 +290,9 @@ pub struct Game {
     pub pause_sel: i32, // 0: Return to Game, 1: Settings
     pub settings_sel: i32, // 0: Game Speed, 1: Save
     pub settings_open: bool,
+
+    /// Previous-frame Escape/Backspace (for edge detection when PAL is not used).
+    prev_back_kb: bool,
 }
 
 // ── Rendering Colors ──────────────────────────────────
@@ -364,6 +371,7 @@ impl Game {
             pause_sel: 0,
             settings_sel: 0,
             settings_open: false,
+            prev_back_kb: false,
         };
 
         // Initialize the first level
@@ -436,6 +444,7 @@ impl Game {
         self.settings_sel = 0;
         self.settings_open = false;
         self.pending_game_speed_idx = self.game_speed_idx;
+        self.prev_back_kb = false;
     }
 
     // ── Equivalent to spawn_platform() ──
@@ -858,18 +867,27 @@ impl Game {
 
         let lc = crate::levels::LEVEL_CFG[self.level].clone();
 
-        // Input: We use Macroquad's native input checks!
-        let left = is_key_down(KeyCode::Left);
-        let right = is_key_down(KeyCode::Right);
-        let up = is_key_down(KeyCode::Up);
-        let down = is_key_down(KeyCode::Down);
+        // Input: Keyboard + TV Remote (TV edges mirror Macroquad `*_pressed`)
+        let left = is_key_down(KeyCode::Left)
+            || get_tv_input_manager().map_or(false, |tv| tv.left);
+        let right = is_key_down(KeyCode::Right)
+            || get_tv_input_manager().map_or(false, |tv| tv.right);
+        let up = is_key_down(KeyCode::Up)
+            || get_tv_input_manager().map_or(false, |tv| tv.up);
+        let down = is_key_down(KeyCode::Down)
+            || get_tv_input_manager().map_or(false, |tv| tv.down);
+        let tv_shoot_edge =
+            get_tv_input_manager().map_or(false, |tv| tv.action_just_pressed());
         let shoot = is_key_pressed(KeyCode::Enter)
             || is_key_pressed(KeyCode::KpEnter)
-            || is_key_pressed(KeyCode::Space); // Added Spacebar for convenience!
+            || is_key_pressed(KeyCode::Space)
+            || tv_shoot_edge;
 
         // In C you tracked 'just pressed' manually. Macroquad does this for us.
-        let lj = is_key_pressed(KeyCode::Left);
-        let rj = is_key_pressed(KeyCode::Right);
+        let lj = is_key_pressed(KeyCode::Left)
+            || get_tv_input_manager().map_or(false, |tv| tv.left_just_pressed());
+        let rj = is_key_pressed(KeyCode::Right)
+            || get_tv_input_manager().map_or(false, |tv| tv.right_just_pressed());
 
         // 1. Horizontal Movement
         if left || lj {
@@ -1494,13 +1512,30 @@ impl Game {
     pub fn update(&mut self) {
         const FIXED_DT: f32 = 1.0 / 60.0;
 
-        // State machine input handling
-        let enter = is_key_pressed(KeyCode::Enter) || is_key_pressed(KeyCode::KpEnter);
-        let back = is_key_pressed(KeyCode::Escape) || is_key_pressed(KeyCode::Backspace);
-        let up = is_key_pressed(KeyCode::Up);
-        let down = is_key_pressed(KeyCode::Down);
-        let left = is_key_pressed(KeyCode::Left);
-        let right = is_key_pressed(KeyCode::Right);
+        // State machine input handling - Keyboard + TV Remote
+        let enter = is_key_pressed(KeyCode::Enter)
+            || is_key_pressed(KeyCode::KpEnter)
+            || get_tv_input_manager().map_or(false, |tv| tv.action_just_pressed());
+        // Edge-only for Back: OR-ing held Escape (browser maps TV Back) with PAL edge toggled
+        // pause every frame while the key stayed down. Toon Dash uses prev-frame `back` state.
+        let kb_back_held =
+            is_key_pressed(KeyCode::Escape) || is_key_pressed(KeyCode::Backspace);
+        let kb_back_edge = kb_back_held && !self.prev_back_kb;
+        let tv_back_edge =
+            get_tv_input_manager().map_or(false, |tv| tv.back_just_pressed());
+        let back = if get_tv_input_manager().is_some() {
+            tv_back_edge
+        } else {
+            kb_back_edge
+        };
+        let up = is_key_pressed(KeyCode::Up)
+            || get_tv_input_manager().map_or(false, |tv| tv.up_just_pressed());
+        let down = is_key_pressed(KeyCode::Down)
+            || get_tv_input_manager().map_or(false, |tv| tv.down_just_pressed());
+        let left = is_key_pressed(KeyCode::Left)
+            || get_tv_input_manager().map_or(false, |tv| tv.left_just_pressed());
+        let right = is_key_pressed(KeyCode::Right)
+            || get_tv_input_manager().map_or(false, |tv| tv.right_just_pressed());
         let high_before = self.high_score;
 
         match self.state {
@@ -1631,6 +1666,13 @@ impl Game {
                 self.trans_timer,
             );
         }
+
+        #[cfg(target_arch = "wasm32")]
+        if let Some(tv) = get_tv_input_manager_mut() {
+            tv.sync_prev_from_current();
+        }
+
+        self.prev_back_kb = kb_back_held;
     }
 
     // ── Equivalent to render_frame() & render_platform() ──

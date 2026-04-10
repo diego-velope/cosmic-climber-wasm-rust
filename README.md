@@ -8,14 +8,40 @@
 - **WASM target**: wasm32-unknown-unknown (no SIMD, no threads)
 - **Deployment**: Vercel (static hosting, pre-built `dist/`)
 
-## Controls (TV Remote / Keyboard)
+## Playing on TV (smart TV / streaming device)
+
+Use your **remote** (not a keyboard). The game expects the same controls most TV apps use:
+
+- **D-pad** (Up, Down, Left, Right) — move, jump, jetpack, and fast fall.
+- **OK** (also labeled **Select** or **Enter** on some remotes) — confirm menu choices, **shoot** in-game, and **retry** after game over.
+- **Return** (also **Back** on some remotes) — open pause, go back in menus, or exit flows where the platform allows it.
+
+**Tips:** Short taps on Left/Right nudge the astronaut; **hold** to run. **Hold Up** for extra jump height when you land, or for jetpack thrust when you have fuel. **Hold Down** to fall faster.
+
+## TV remote — control reference
+
+| Action        | Remote                    | Behaviour                              |
+|---------------|---------------------------|----------------------------------------|
+| Move left     | D-pad Left                | Tap = nudge, **hold** = run            |
+| Move right    | D-pad Right               | Tap = nudge, **hold** = run            |
+| Jump / extra jump | D-pad Up (hold)     | **Hold** at landing = height boost     |
+| Jetpack       | D-pad Up (hold)           | **Hold** while jetpack active = thrust |
+| Fast fall     | D-pad Down (hold)         | **Hold** = accelerated descent         |
+| Shoot laser   | **OK** / Select           | Single shot, no auto-repeat            |
+| Pause         | **Return** / Back         | Pause / back                            |
+| Start / confirm | **OK** / Select         | Menu: start game, settings, resume     |
+
+## Keyboard (desktop browser only)
+
+For testing on a PC, use the **arrow keys** like a D-pad, **Enter** or **Space** like **OK**, and **Escape** like **Return** / Back:
+
 | Action        | Key              | Behaviour                              |
 |---------------|------------------|----------------------------------------|
-| Move left     | ◀ Arrow          | Tap = nudge, **Hold** = run            |
-| Move right    | ▶ Arrow          | Tap = nudge, **Hold** = run            |
-| Extra jump    | ▲ Arrow (hold)   | **Hold** at landing = height boost     |
-| Jetpack       | ▲ Arrow (hold)   | **Hold** while jetpack active = thrust |
-| Fast fall     | ▼ Arrow (hold)   | **Hold** = accelerated descent         |
+| Move left     | ◀ Arrow / A      | Tap = nudge, **Hold** = run            |
+| Move right    | ▶ Arrow / D      | Tap = nudge, **Hold** = run            |
+| Extra jump    | ▲ Arrow / W (hold) | **Hold** at landing = height boost   |
+| Jetpack       | ▲ Arrow / W (hold) | **Hold** while jetpack active = thrust |
+| Fast fall     | ▼ Arrow / S (hold) | **Hold** = accelerated descent       |
 | Shoot laser   | Enter / Space    | Single fire, no auto-repeat            |
 | Pause         | Escape           | Toggle pause, no auto-repeat           |
 
